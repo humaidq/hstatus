@@ -1,15 +1,23 @@
+extern crate chrono;
+extern crate curl;
+extern crate json;
+extern crate libc;
 extern crate x11;
+
 use chrono::prelude::*;
+use curl::easy::Easy;
+use libc::{c_int, getloadavg};
 use std::ffi::CString;
 use std::fs::File;
 use std::io::prelude::*;
 use std::{string, thread, time};
-use libc::{getloadavg, c_int};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DesktopStatus {
     disp: *mut x11::xlib::Display,
 }
+
+static COVID19_COUNTRY_ID: usize = 233;
 
 impl DesktopStatus {
     pub fn new() -> Self {
@@ -36,10 +44,20 @@ impl DesktopStatus {
 }
 
 fn main() {
+    get_covid19_stats();
     let status: DesktopStatus = DesktopStatus::new();
     loop {
         println!("Update");
         let mut stat = String::new();
+        // covid19
+        match get_covid19_stats() {
+            Ok(covid) => {
+                stat.push_str(covid.as_str());
+                stat.push('|');
+            },
+            Err(why) => println!("Cannot get COVID19 stats: {}", why),
+        }
+
         // load
         let load_res = get_load();
         match load_res {
@@ -78,7 +96,7 @@ fn main() {
 
         stat.push_str("humaid's system");
         status.set_status(stat.as_str());
-        thread::sleep(time::Duration::from_secs(1));
+        thread::sleep(time::Duration::from_secs(30));
     }
     status.close();
 }
@@ -92,17 +110,47 @@ fn read_file(file: &str) -> std::io::Result<string::String> {
 
 fn get_load() -> Result<string::String, &'static str> {
     let mut avgs = Vec::with_capacity(3_usize);
-    match unsafe {
-        getloadavg(avgs.as_mut_ptr(), 3 as c_int)
-    } {
+    match unsafe { getloadavg(avgs.as_mut_ptr(), 3 as c_int) } {
         -1 => Err("returned -1"),
         3 => {
             unsafe {
                 avgs.set_len(3_usize);
             }
             Ok(format!("{} {} {}", avgs[0], avgs[1], avgs[2]))
-        },
+        }
         _ => Err("unknown value"),
+    }
+}
+
+fn get_covid19_stats() -> Result<string::String, &'static str> {
+    let mut data = Vec::new();
+    let mut handle = Easy::new();
+    match handle.url("https://api.covid19api.com/summary") {
+        Ok(_) => {
+            {
+                let mut transfer = handle.transfer();
+                transfer
+                    .write_function(|new_data| {
+                        data.extend_from_slice(new_data);
+                        Ok(new_data.len())
+                    })
+                    .unwrap();
+                let parsed = transfer.perform().unwrap();
+            }
+            match json::parse(&String::from_utf8_lossy(&data).to_string()) {
+                Ok(parsed) => Ok(String::from(format!(
+                    "TOT:{}(+{}) REC:{}(+{}) DED:{}(+{})",
+                    parsed["Countries"][COVID19_COUNTRY_ID]["TotalConfirmed"],
+                    parsed["Countries"][COVID19_COUNTRY_ID]["NewConfirmed"],
+                    parsed["Countries"][COVID19_COUNTRY_ID]["TotalRecovered"],
+                    parsed["Countries"][COVID19_COUNTRY_ID]["NewRecovered"],
+                    parsed["Countries"][COVID19_COUNTRY_ID]["TotalDeaths"],
+                    parsed["Countries"][COVID19_COUNTRY_ID]["NewDeaths"]
+                ))),
+                Err(reason) => Err("Error parsing json"),
+            }
+        }
+        Err(reason) => Err("Error in curl URL"),
     }
 }
 
