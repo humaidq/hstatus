@@ -40,12 +40,13 @@ fn main() {
         // bat
         let bat = get_battery();
         match bat {
-            Some(perc) => {
+            Ok(perc) => {
                 stat.push_str("B:");
                 stat.push_str(perc.as_str());
             }
-            None => println!("Cannot get battery percentage")
+            Err(why) => println!("Cannot get battery percentage: {}", why)
         }
+        stat.push('|');
         // time
         let local: DateTime<Local> = Local::now();
         stat.push_str("UK:");
@@ -63,32 +64,29 @@ fn main() {
     status.close();
 }
 
-fn get_battery() -> Option<string::String> {
-    let mut present = File::open("/sys/class/power_supply/BAT0/present").expect("something");
-    let mut present_contents = String::new();
-    present.read_to_string(&mut present_contents).expect("something");
-    assert_eq!(present_contents, "1\n", "Battery not present");
+fn read_file(file: &str) -> std::io::Result<string::String> {
+    let mut file = File::open(file)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    Ok(contents.replace("\n", ""))
+}
 
-    let mut full = File::open("/sys/class/power_supply/BAT0/energy_full_design").expect("something");
-    let mut full_contents = String::new();
-    full.read_to_string(&mut full_contents).expect("something");
+fn get_battery() -> std::io::Result<string::String> {
+    let present = read_file("/sys/class/power_supply/BAT0/present")?;
+    assert_eq!(present, "1", "Battery not present");
 
-    let full_design: i32 = full_contents.replace("\n","").parse().unwrap();
+    let full = read_file("/sys/class/power_supply/BAT0/energy_full_design")?;
+    let full_design: i32 = full.parse().unwrap();
 
-    let mut now = File::open("/sys/class/power_supply/BAT0/energy_now").expect("something");
-    let mut now_contents = String::new();
-    now.read_to_string(&mut now_contents).expect("something");
+    let now = read_file("/sys/class/power_supply/BAT0/energy_now")?;
+    let now_cap: i32 = now.parse().unwrap();
 
-    let now_cap: i32 = now_contents.replace("\n","").parse().unwrap();
-
-    let mut status = File::open("/sys/class/power_supply/BAT0/status").expect("something");
-    let mut status_contents = String::new();
-    status.read_to_string(&mut status_contents).expect("something");
-    let stat = match status_contents.replace("\n","").as_ref() {
+    let status = read_file("/sys/class/power_supply/BAT0/status")?;
+    let stat = match status.as_ref() {
         "Discharging" =>  "-",
         "Charging" =>"+",
         _ =>"/",
     };
 
-    Some(format!("{}%{}",((now_cap as f64/full_design as f64)*100_f64) as i32, stat))
+    Ok(format!("{}%{}",((now_cap as f64/full_design as f64)*100_f64) as i32, stat))
 }
