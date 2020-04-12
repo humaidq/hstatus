@@ -1,6 +1,8 @@
 extern crate x11;
 use std::ffi::CString;
+use std::{thread, time};
 
+#[derive(Copy, Clone)]
 pub struct DesktopStatus {
     disp: *mut x11::xlib::Display,
 }
@@ -17,19 +19,20 @@ impl DesktopStatus {
             x11::xlib::XStoreName(self.disp, x11::xlib::XDefaultRootWindow(self.disp), s.as_ptr());
         }
     }
-}
-
-impl Drop for DesktopStatus {
-    fn drop(&mut self) {
+    pub fn close(self) {
         unsafe {
             x11::xlib::XCloseDisplay(self.disp);
         }
     }
 }
 
+
 fn main() {
-    // Open display
     let status: DesktopStatus = DesktopStatus::new();
-    status.set_status("hi");
+    loop {
+        status.set_status("hi");
+        thread::sleep(time::Duration::from_secs(1));
+    }
+    status.close();
 }
 
