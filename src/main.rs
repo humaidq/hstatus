@@ -1,9 +1,12 @@
+#[macro_use]
+extern crate cached;
 extern crate chrono;
 extern crate curl;
 extern crate json;
 extern crate libc;
 extern crate x11;
 
+use cached::TimedCache;
 use chrono::prelude::*;
 use curl::easy::Easy;
 use libc::{c_int, getloadavg};
@@ -44,10 +47,9 @@ impl DesktopStatus {
 }
 
 fn main() {
-    get_covid19_stats();
     let status: DesktopStatus = DesktopStatus::new();
     loop {
-        println!("Update");
+        println!("Updating status");
         let mut stat = String::new();
         // covid19
         match get_covid19_stats() {
@@ -96,7 +98,7 @@ fn main() {
 
         stat.push_str("humaid's system");
         status.set_status(stat.as_str());
-        thread::sleep(time::Duration::from_secs(30));
+        thread::sleep(time::Duration::from_secs(2));
     }
     status.close();
 }
@@ -122,35 +124,42 @@ fn get_load() -> Result<string::String, &'static str> {
     }
 }
 
-fn get_covid19_stats() -> Result<string::String, &'static str> {
-    let mut data = Vec::new();
-    let mut handle = Easy::new();
-    match handle.url("https://api.covid19api.com/summary") {
-        Ok(_) => {
-            {
-                let mut transfer = handle.transfer();
-                transfer
-                    .write_function(|new_data| {
-                        data.extend_from_slice(new_data);
-                        Ok(new_data.len())
-                    })
-                    .unwrap();
-                let parsed = transfer.perform().unwrap();
+cached! {
+    GET_COVID19_STATS: TimedCache<(), Result<string::String, &'static str>> = TimedCache::with_lifespan(6 * 3600);
+    fn get_covid19_stats() -> Result<string::String, &'static str> = {
+        println!("Getting COVID19 stats...");
+        let mut data = Vec::new();
+        let mut handle = Easy::new();
+        match handle.url("https://api.covid19api.com/summary") {
+            Ok(_) => {
+                {
+                    let mut transfer = handle.transfer();
+                    transfer
+                        .write_function(|new_data| {
+                            data.extend_from_slice(new_data);
+                            Ok(new_data.len())
+                        })
+                        .unwrap();
+                    let res = transfer.perform();
+                    if let Err(_) = res {
+                        return Err("Error performing curl");
+                    }
+                }
+                match json::parse(&String::from_utf8_lossy(&data).to_string()) {
+                    Ok(parsed) => Ok(String::from(format!(
+                        "TOT:{}(+{}) REC:{}(+{}) DED:{}(+{})",
+                        parsed["Countries"][COVID19_COUNTRY_ID]["TotalConfirmed"],
+                        parsed["Countries"][COVID19_COUNTRY_ID]["NewConfirmed"],
+                        parsed["Countries"][COVID19_COUNTRY_ID]["TotalRecovered"],
+                        parsed["Countries"][COVID19_COUNTRY_ID]["NewRecovered"],
+                        parsed["Countries"][COVID19_COUNTRY_ID]["TotalDeaths"],
+                        parsed["Countries"][COVID19_COUNTRY_ID]["NewDeaths"]
+                    ))),
+                    Err(_) => Err("Error parsing json"),
+                }
             }
-            match json::parse(&String::from_utf8_lossy(&data).to_string()) {
-                Ok(parsed) => Ok(String::from(format!(
-                    "TOT:{}(+{}) REC:{}(+{}) DED:{}(+{})",
-                    parsed["Countries"][COVID19_COUNTRY_ID]["TotalConfirmed"],
-                    parsed["Countries"][COVID19_COUNTRY_ID]["NewConfirmed"],
-                    parsed["Countries"][COVID19_COUNTRY_ID]["TotalRecovered"],
-                    parsed["Countries"][COVID19_COUNTRY_ID]["NewRecovered"],
-                    parsed["Countries"][COVID19_COUNTRY_ID]["TotalDeaths"],
-                    parsed["Countries"][COVID19_COUNTRY_ID]["NewDeaths"]
-                ))),
-                Err(reason) => Err("Error parsing json"),
-            }
+            Err(_) => Err("Error in curl URL"),
         }
-        Err(reason) => Err("Error in curl URL"),
     }
 }
 
