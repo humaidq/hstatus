@@ -20,7 +20,7 @@ pub struct DesktopStatus {
     disp: *mut x11::xlib::Display,
 }
 
-static COVID19_COUNTRY_ID: usize = 233;
+static COVID19_COUNTRY: &str = "ae";
 
 impl DesktopStatus {
     pub fn new() -> Self {
@@ -56,7 +56,7 @@ fn main() {
             Ok(covid) => {
                 stat.push_str(covid.as_str());
                 stat.push('|');
-            },
+            }
             Err(why) => println!("Cannot get COVID19 stats: {}", why),
         }
 
@@ -130,7 +130,7 @@ cached! {
         println!("Getting COVID19 stats...");
         let mut data = Vec::new();
         let mut handle = Easy::new();
-        match handle.url("https://api.covid19api.com/summary") {
+        match handle.url(&("https://api.covid19api.com/live/country/".to_owned()+COVID19_COUNTRY)) {
             Ok(_) => {
                 {
                     let mut transfer = handle.transfer();
@@ -146,15 +146,17 @@ cached! {
                     }
                 }
                 match json::parse(&String::from_utf8_lossy(&data).to_string()) {
-                    Ok(parsed) => Ok(String::from(format!(
-                        "TOT:{}(+{}) REC:{}(+{}) DED:{}(+{})",
-                        parsed["Countries"][COVID19_COUNTRY_ID]["TotalConfirmed"],
-                        parsed["Countries"][COVID19_COUNTRY_ID]["NewConfirmed"],
-                        parsed["Countries"][COVID19_COUNTRY_ID]["TotalRecovered"],
-                        parsed["Countries"][COVID19_COUNTRY_ID]["NewRecovered"],
-                        parsed["Countries"][COVID19_COUNTRY_ID]["TotalDeaths"],
-                        parsed["Countries"][COVID19_COUNTRY_ID]["NewDeaths"]
-                    ))),
+                    Ok(parsed) => {
+                       let latest = parsed.len()-1;
+                        Ok(String::from(format!(
+                        "CON:{confirm} REC:{recover} DED:{deaths} ACT:{active}",
+                        confirm=parsed[latest]["Confirmed"],
+                        recover=parsed[latest]["Recovered"],
+                        deaths=parsed[latest]["Deaths"],
+                        active=parsed[latest]["Active"],
+                    )))
+
+                    },
                     Err(_) => Err("Error parsing json"),
                 }
             }
