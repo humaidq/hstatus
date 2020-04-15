@@ -118,7 +118,7 @@ fn get_load() -> Result<string::String, &'static str> {
             unsafe {
                 avgs.set_len(3_usize);
             }
-            Ok(format!("{} {} {}", avgs[0], avgs[1], avgs[2]))
+            Ok(format!("{:.2} {:.2} {:.2}", avgs[0], avgs[1], avgs[2]))
         }
         _ => Err("unknown value"),
     }
