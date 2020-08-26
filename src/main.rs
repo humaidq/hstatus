@@ -1,14 +1,9 @@
-#[macro_use]
-extern crate cached;
 extern crate chrono;
-extern crate curl;
 extern crate json;
 extern crate libc;
 extern crate x11;
 
-use cached::TimedCache;
 use chrono::prelude::*;
-use curl::easy::Easy;
 use libc::{c_int, getloadavg};
 use std::ffi::CString;
 use std::fs::File;
@@ -19,8 +14,6 @@ use std::{string, thread, time};
 pub struct DesktopStatus {
     disp: *mut x11::xlib::Display,
 }
-
-static COVID19_COUNTRY: &str = "ae";
 
 impl DesktopStatus {
     pub fn new() -> Self {
@@ -51,15 +44,6 @@ fn main() {
     loop {
         println!("Updating status");
         let mut stat = String::new();
-        // covid19
-        match get_covid19_stats() {
-            Ok(covid) => {
-                stat.push_str(covid.as_str());
-                stat.push('|');
-            }
-            Err(why) => println!("Cannot get COVID19 stats: {}", why),
-        }
-
         // load
         let load_res = get_load();
         match load_res {
@@ -121,47 +105,6 @@ fn get_load() -> Result<string::String, &'static str> {
             Ok(format!("{:.2} {:.2} {:.2}", avgs[0], avgs[1], avgs[2]))
         }
         _ => Err("unknown value"),
-    }
-}
-
-cached! {
-    GET_COVID19_STATS: TimedCache<(), Result<string::String, &'static str>> = TimedCache::with_lifespan(6 * 3600);
-    fn get_covid19_stats() -> Result<string::String, &'static str> = {
-        println!("Getting COVID19 stats...");
-        let mut data = Vec::new();
-        let mut handle = Easy::new();
-        match handle.url(&("https://api.covid19api.com/live/country/".to_owned()+COVID19_COUNTRY)) {
-            Ok(_) => {
-                {
-                    let mut transfer = handle.transfer();
-                    transfer
-                        .write_function(|new_data| {
-                            data.extend_from_slice(new_data);
-                            Ok(new_data.len())
-                        })
-                        .unwrap();
-                    let res = transfer.perform();
-                    if let Err(_) = res {
-                        return Err("Error performing curl");
-                    }
-                }
-                match json::parse(&String::from_utf8_lossy(&data).to_string()) {
-                    Ok(parsed) => {
-                       let latest = parsed.len()-1;
-                        Ok(String::from(format!(
-                        "CON:{confirm} REC:{recover} DED:{deaths} ACT:{active}",
-                        confirm=parsed[latest]["Confirmed"],
-                        recover=parsed[latest]["Recovered"],
-                        deaths=parsed[latest]["Deaths"],
-                        active=parsed[latest]["Active"],
-                    )))
-
-                    },
-                    Err(_) => Err("Error parsing json"),
-                }
-            }
-            Err(_) => Err("Error in curl URL"),
-        }
     }
 }
 
