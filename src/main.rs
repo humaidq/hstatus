@@ -43,6 +43,27 @@ fn main() {
     let status: DesktopStatus = DesktopStatus::new();
     loop {
         println!("Updating status");
+        // Run the low battery flair
+        let bat_num = get_battery_perc();
+        if bat_num < 20 {
+            let mut bat_notice = String::new();
+            bat_notice.push_str("==============================");
+            bat_notice.push_str(" !!! Low Battery !!! (");
+            bat_notice.push_str(bat_num.to_string().as_str());
+            bat_notice.push_str("%) ==============================");
+
+            for i in 0..4 {
+                if i % 2 == 0 {
+                    status.set_status(bat_notice.as_str());
+                } else {
+                    status.set_status("hey!");
+                }
+                thread::sleep(time::Duration::from_secs(1));
+            }
+        }
+
+
+
         let mut stat = String::new();
         // load
         let load_res = get_load();
@@ -56,7 +77,7 @@ fn main() {
         }
 
         // bat
-        let bat = get_battery();
+        let bat = get_battery_with_status();
         match bat {
             Ok(perc) => {
                 stat.push_str("B:");
@@ -108,16 +129,19 @@ fn get_load() -> Result<string::String, &'static str> {
     }
 }
 
-fn get_battery() -> std::io::Result<string::String> {
-    let present = read_file("/sys/class/power_supply/BAT0/present")?;
+fn get_battery_perc() -> i32 {
+    let present = read_file("/sys/class/power_supply/BAT0/present").unwrap();
     assert_eq!(present, "1", "Battery not present");
 
-    let full = read_file("/sys/class/power_supply/BAT0/energy_full_design")?;
+    let full = read_file("/sys/class/power_supply/BAT0/energy_full_design").unwrap();
     let full_design: i32 = full.parse().unwrap();
 
-    let now = read_file("/sys/class/power_supply/BAT0/energy_now")?;
+    let now = read_file("/sys/class/power_supply/BAT0/energy_now").unwrap();
     let now_cap: i32 = now.parse().unwrap();
+    return ((now_cap as f64 / full_design as f64) * 100_f64) as i32
+}
 
+fn get_battery_with_status() -> std::io::Result<string::String> {
     let status = read_file("/sys/class/power_supply/BAT0/status")?;
     let stat = match status.as_ref() {
         "Discharging" => "-",
@@ -125,9 +149,5 @@ fn get_battery() -> std::io::Result<string::String> {
         _ => "/",
     };
 
-    Ok(format!(
-        "{}%{}",
-        ((now_cap as f64 / full_design as f64) * 100_f64) as i32,
-        stat
-    ))
+    Ok(format!("{}%{}", get_battery_perc(), stat))
 }
