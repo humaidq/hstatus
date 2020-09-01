@@ -46,19 +46,31 @@ fn main() {
         // Run the low battery flair
         let bat_num = get_battery_perc();
         if bat_num < 20 {
-            let mut bat_notice = String::new();
-            bat_notice.push_str("==============================");
-            bat_notice.push_str(" !!! Low Battery !!! (");
-            bat_notice.push_str(bat_num.to_string().as_str());
-            bat_notice.push_str("%) ==============================");
 
-            for i in 0..4 {
-                if i % 2 == 0 {
-                    status.set_status(bat_notice.as_str());
-                } else {
-                    status.set_status("hey!");
+            let st_res = read_file("/sys/class/power_supply/BAT0/status");
+            match st_res {
+                Ok(s) => {
+                    match s.as_ref() {
+                        "Discharging" => {
+                            let mut bat_notice = String::new();
+                            bat_notice.push_str("==============================");
+                            bat_notice.push_str(" !!! Low Battery !!! (");
+                            bat_notice.push_str(bat_num.to_string().as_str());
+                            bat_notice.push_str("%) ==============================");
+
+                            for i in 0..4 {
+                                if i % 2 == 0 {
+                                    status.set_status(bat_notice.as_str());
+                                } else {
+                                    status.set_status("hey!");
+                                }
+                                thread::sleep(time::Duration::from_secs(1));
+                            }
+                        },
+                        _ => {}
+                    };
                 }
-                thread::sleep(time::Duration::from_secs(1));
+                Err(_) => {}
             }
         }
 
