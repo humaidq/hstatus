@@ -9,6 +9,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::{string, thread, time};
 
+const SYSTEM_NAME: &str = "humaid's system";
+
 #[derive(Debug, Clone, Copy)]
 pub struct DesktopStatus {
     disp: *mut x11::xlib::Display,
@@ -120,15 +122,14 @@ fn main() {
         }
 
         let mut stat = String::new();
-        // load
 
         for i in &stat_items {
             stat.push_str(i().as_str());
         }
 
-        stat.push_str("humaid's system");
+        stat.push_str(SYSTEM_NAME);
         status.set_status(stat.as_str());
-        thread::sleep(time::Duration::from_secs(2));
+        thread::sleep(time::Duration::from_secs(3));
     }
     status.close();
 }
