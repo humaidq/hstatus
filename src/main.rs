@@ -1,5 +1,4 @@
 extern crate chrono;
-extern crate json;
 extern crate libc;
 extern crate x11;
 
@@ -39,79 +38,93 @@ impl DesktopStatus {
     }
 }
 
+type StatusItem = fn() -> String;
+
+fn load_item() -> String {
+    let mut res = String::new();
+    let load_res = get_load();
+    match load_res {
+        Ok(load) => {
+            res.push_str("L:");
+            res.push_str(load.as_str());
+            res.push('|');
+        }
+        Err(why) => println!("Cannot get load: {}", why),
+    }
+    res
+}
+
+fn battery_item() -> String {
+    let mut res = String::new();
+    let bat = get_battery_with_status();
+    match bat {
+        Ok(perc) => {
+            res.push_str("B:");
+            res.push_str(perc.as_str());
+            res.push('|');
+        }
+        Err(why) => println!("Cannot get battery percentage: {}", why),
+    }
+    res
+}
+
+fn time_item() -> String {
+    let mut res = String::new();
+    let local: DateTime<Local> = Local::now();
+    res.push_str("UK:");
+    res.push_str(
+        local
+            .with_timezone(&chrono::FixedOffset::east(3600))
+            .format("%I:%M")
+            .to_string()
+            .as_str(),
+    );
+    res.push(' ');
+    res.push_str("AE:");
+    res.push_str(local.format("%I:%M %p %d-%m-%Y").to_string().as_str());
+    res.push('|');
+    res
+}
+
 fn main() {
+    let mut stat_items: Vec<StatusItem> = Vec::new();
+    stat_items.push(load_item);
+    stat_items.push(battery_item);
+    stat_items.push(time_item);
+
     let status: DesktopStatus = DesktopStatus::new();
     loop {
         println!("Updating status");
         // Run the low battery flair
         let bat_num = get_battery_perc();
         if bat_num < 20 {
-
             let st_res = read_file("/sys/class/power_supply/BAT0/status");
-            match st_res {
-                Ok(s) => {
-                    match s.as_ref() {
-                        "Discharging" => {
-                            let mut bat_notice = String::new();
-                            bat_notice.push_str("==============================");
-                            bat_notice.push_str(" !!! Low Battery !!! (");
-                            bat_notice.push_str(bat_num.to_string().as_str());
-                            bat_notice.push_str("%) ==============================");
+            if let Ok(s) = st_res {
+                if s == "Discharging" {
+                    let mut bat_notice = String::new();
+                    bat_notice.push_str("==============================");
+                    bat_notice.push_str(" !!! Low Battery !!! (");
+                    bat_notice.push_str(bat_num.to_string().as_str());
+                    bat_notice.push_str("%) ==============================");
 
-                            for i in 0..4 {
-                                if i % 2 == 0 {
-                                    status.set_status(bat_notice.as_str());
-                                } else {
-                                    status.set_status("hey!");
-                                }
-                                thread::sleep(time::Duration::from_secs(1));
-                            }
-                        },
-                        _ => {}
-                    };
+                    for i in 0..4 {
+                        if i % 2 == 0 {
+                            status.set_status(bat_notice.as_str());
+                        } else {
+                            status.set_status("hey!");
+                        }
+                        thread::sleep(time::Duration::from_secs(1));
+                    }
                 }
-                Err(_) => {}
             }
         }
-
-
 
         let mut stat = String::new();
         // load
-        let load_res = get_load();
-        match load_res {
-            Ok(load) => {
-                stat.push_str("L:");
-                stat.push_str(load.as_str());
-                stat.push('|');
-            }
-            Err(why) => println!("Cannot get load: {}", why),
-        }
 
-        // bat
-        let bat = get_battery_with_status();
-        match bat {
-            Ok(perc) => {
-                stat.push_str("B:");
-                stat.push_str(perc.as_str());
-                stat.push('|');
-            }
-            Err(why) => println!("Cannot get battery percentage: {}", why),
+        for i in &stat_items {
+            stat.push_str(i().as_str());
         }
-        // time
-        let local: DateTime<Local> = Local::now();
-        stat.push_str("UK:");
-        stat.push_str(
-            local
-                .with_timezone(&chrono::FixedOffset::east(3600))
-                .format("%I:%M")
-                .to_string()
-                .as_str(),
-        );
-        stat.push(' ');
-        stat.push_str("AE:");
-        stat.push_str(local.format("%I:%M %p %d-%m-%Y").to_string().as_str());
-        stat.push('|');
 
         stat.push_str("humaid's system");
         status.set_status(stat.as_str());
