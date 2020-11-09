@@ -76,14 +76,16 @@ fn time_item() -> String {
     res.push_str("UK:");
     res.push_str(
         local
-            .with_timezone(&chrono::FixedOffset::east(3600))
+            //.with_timezone(&chrono::FixedOffset::east(3600))
             .format("%I:%M")
             .to_string()
             .as_str(),
     );
     res.push(' ');
     res.push_str("AE:");
-    res.push_str(local.format("%I:%M %p %d-%m-%Y").to_string().as_str());
+    res.push_str(local
+        .with_timezone(&chrono::FixedOffset::east(4 * 3600))
+        .format("%I:%M %p %d-%m-%Y").to_string().as_str());
     res.push('|');
     res
 }
@@ -102,7 +104,7 @@ fn main() {
         if bat_num < 20 {
             let st_res = read_file("/sys/class/power_supply/BAT0/status");
             if let Ok(s) = st_res {
-                if s == "Discharging" {
+                if s.trim() == "Discharging" {
                     let mut bat_notice = String::new();
                     bat_notice.push_str("==============================");
                     bat_notice.push_str(" !!! Low Battery !!! (");
