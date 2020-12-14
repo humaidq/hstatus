@@ -1,6 +1,14 @@
 extern crate chrono;
 extern crate libc;
 extern crate x11;
+extern crate reqwest;
+extern crate select;
+extern crate cached;
+
+use cached::proc_macro::cached;
+
+use select::document::Document;
+use select::predicate::{Class, Predicate};
 
 use chrono::prelude::*;
 use libc::{c_int, getloadavg};
@@ -43,31 +51,19 @@ impl DesktopStatus {
 type StatusItem = fn() -> String;
 
 fn load_item() -> String {
-    let mut res = String::new();
-    let load_res = get_load();
-    match load_res {
-        Ok(load) => {
-            res.push_str("L:");
-            res.push_str(load.as_str());
-            res.push('|');
-        }
+    match get_load() {
+        Ok(load) => return format!("L:{}|", load.as_str()),
         Err(why) => println!("Cannot get load: {}", why),
     }
-    res
+    "".to_string()
 }
 
 fn battery_item() -> String {
-    let mut res = String::new();
-    let bat = get_battery_with_status();
-    match bat {
-        Ok(perc) => {
-            res.push_str("B:");
-            res.push_str(perc.as_str());
-            res.push('|');
-        }
+    match get_battery_with_status() {
+        Ok(perc) => return format!("B:{}|", perc.as_str()),
         Err(why) => println!("Cannot get battery percentage: {}", why),
     }
-    res
+    "".to_string()
 }
 
 fn time_item() -> String {
@@ -90,8 +86,31 @@ fn time_item() -> String {
     res
 }
 
+#[cached(time=21600)]
+fn get_covid_stats() -> String {
+    let resp = reqwest::blocking::get("http://covid19.ncema.gov.ae/").unwrap();
+    if !resp.status().is_success() {
+        println!("covid fail: {}", resp.status());
+        return "fail".to_string();
+    }
+    let doc = Document::from_read(resp).unwrap();
+
+    let active = doc
+        .select(Class("active").descendant(Class("counter"))).next().unwrap()
+        .text();
+    
+    let recovered = doc
+        .select(Class("recovered").descendant(Class("new-cases").descendant(Class("recovered")))).next().unwrap()
+        .text();
+
+    let rec = recovered.split(' ').collect::<Vec<&str>>()[2].to_string();
+
+    return format!("A:{} R:{}|", active, rec);
+}
+
 fn main() {
     let mut stat_items: Vec<StatusItem> = Vec::new();
+    stat_items.push(get_covid_stats);
     stat_items.push(load_item);
     stat_items.push(battery_item);
     stat_items.push(time_item);
@@ -161,12 +180,12 @@ fn get_battery_perc() -> i32 {
     let present = read_file("/sys/class/power_supply/BAT0/present").unwrap();
     assert_eq!(present, "1", "Battery not present");
 
-    let full = read_file("/sys/class/power_supply/BAT0/energy_full_design").unwrap();
-    let full_design: i32 = full.parse().unwrap();
+    let full:i32 = read_file("/sys/class/power_supply/BAT0/energy_full_design")
+        .unwrap().parse().unwrap();
+    let now: i32 = read_file("/sys/class/power_supply/BAT0/energy_now")
+        .unwrap().parse().unwrap();
 
-    let now = read_file("/sys/class/power_supply/BAT0/energy_now").unwrap();
-    let now_cap: i32 = now.parse().unwrap();
-    return ((now_cap as f64 / full_design as f64) * 100_f64) as i32
+    return ((now as f64 / full as f64) * 100_f64) as i32
 }
 
 fn get_battery_with_status() -> std::io::Result<string::String> {

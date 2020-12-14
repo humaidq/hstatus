@@ -10,3 +10,6 @@ edition = "2018"
 x11 = { version = "2.18.2", features = ["xlib"] }
 chrono = "0.4"
 libc = "0.2.68"
+reqwest = { version = "0.10.9", features = ["blocking"] }
+select = "0.6.0-alpha.1"
+cached = "0.22.0"
